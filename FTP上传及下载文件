@@ -1,0 +1,25 @@
+下载脚本
+ftp -v -n 219.132.71.168<<EOF
+user oracle p123456
+binary
+cd /home/oracle/db_bak
+lcd /home/ftptemp
+prompt
+mget *.log
+close
+bye
+EOF
+
+
+上传脚本
+tar -cvf /soft/xt/`date +%Y%m%d`ftp.tar /OAWEB/webapp/ >/soft/xt/tar.log
+ftp -v -n 219.132.71.168 << EOF
+user oracle p123456
+binary
+hash
+cd /home/oracle/db_bak
+lcd /soft/xt/
+prompt
+mput *ftp.tar
+bye
+EOF >/soft/xt/ftp.l
