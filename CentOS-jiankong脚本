@@ -1,0 +1,488 @@
+#!/bin/bash
+##############################################
+#Author: WangZhengYu - 18001598184@163.com
+#QQ:94136676
+#Last modified: 2019-01-01 19:00
+#Filename: jiankong.sh
+#Description: Just for CentOS6.X
+##############################################
+source /etc/profile
+#获取报警时间
+now_time=`date '+%F %T'`
+#site='ZhanJiang'
+site='湛江'
+#mobile='18001598184'
+array_mobile=("18001598184" "18502564912" "13952008822" "18795952348")
+#array_mobile=("18001598184")
+email_address='18001598184@163.com'
+array_email=("18001598184@163.com" "13770937334@139.com")
+
+#发送告警邮件函数
+function send_mail(){
+        mail -s "${site}_Monitor Alarming" ${email_address} < ${tmpFile}
+}
+
+#发送告警短/微信息函数
+function send_msg(){
+	su - oracle <<EOF
+        sqlplus -S trs/trs123@trsdb
+        insert into t_alarm_msg (phone_number,msg_body,send_type,send_flag,insert_time) values('$1','$2',0,0,sysdate);
+        commit;
+        exit;
+EOF
+}
+
+#向多人发送告警邮件函数
+function send_mailArr(){
+        mailarr=$1
+        for j in ${mailarr[*]};do
+        echo $j
+        mail -s "${site}_Monitor Alarming" ${j} < ${tmpFile}
+        done
+}
+
+#向多人发送告警短/微信息函数
+function send_msgArr(){
+        arr=$1
+        for i in ${arr[*]};do
+        echo $i
+        su - oracle <<EOF
+        sqlplus -S trs/trs123@trsdb
+        insert into t_alarm_msg (phone_number,msg_body,send_type,send_flag,insert_time) values('$i','$2',0,0,sysdate);
+        commit;
+        exit;
+EOF
+done
+}
+
+#磁盘空间利用率、内存利用率、cpu利用率、进程检查函数
+function check(){
+#获取cpu使用率
+#cpuUsage=`top -n 1 | awk -F ‘[ %]+‘ ‘NR==3 {print $2}‘`
+cpuUsage=`top -bn 1|awk -F '[, %]+' 'NR==3 {print 100-$8}'`
+#获取磁盘使用率
+#data_name="/dev/sda3"
+#diskUsage=`df -h | grep $data_name | awk -F '[ %]+' '{print $5}'`
+diskUsage=`df -h|awk -F '[ %]+' '/\/home$/{print $5}'`
+#logFile=./jiankong.log
+tmpFile=/tmp/tmpFile.tmp
+IP=`/sbin/ifconfig eth0 | grep "inet addr" | cut -f 2 -d ":" | cut -f 1 -d " "`
+#获取内存情况
+mem_total=`free -m | awk -F '[ :]+' 'NR==2{print $2}'`
+mem_used=`free -m | awk -F '[ :]+' 'NR==3{print $3}'`
+#统计内存使用率
+mem_used_persent=`awk 'BEGIN{printf "%.0f\n",('$mem_used'/'$mem_total')*100}'`
+#设置监控阈值
+a=`echo "${cpuUsage} > 80"|bc`
+b=`echo "${diskUsage} > 80"|bc`
+c=`echo "${mem_used_persent} > 80"|bc`
+#浮点数比较大小不能使用此种判断方法
+#        if [[ ${cpuUsage} > 80 ]] || [[ ${diskUsage} > 80 ]] || [[ ${mem_used_persent} > 80 ]];then
+#浮点数比较大小采用以下判断方法
+	if [[ $a -eq 1 ]] || [[ $b -eq 1 ]] || [[ $c -eq 1 ]];then
+                echo "<<${site}_${IP}>>Alarming time:${now_time}" > $tmpFile
+                echo "CPUUsage:${cpuUsage}% --> DiskUsage:${diskUsage}% --> Memory_used_persent:${mem_used_persent}%" | tee -a $tmpFile
+		#send_mail
+		send_mailArr "${array_email[*]}"
+#注意传递参数时，如果参数字符串值中含有空格字符，需要将参数加""
+                msg="[[${site}_${IP}]]: CPUUsage=${cpuUsage}%, DiskUsage=${diskUsage}%, Memory_used_persent=${mem_used_persent}%"
+                #send_msg ${mobile} "${msg}"
+                #send_msg ${mobile_1} "${msg}"
+                send_msgArr "${array_mobile[*]}" "${msg}" 
+
+        fi
+#  -----------------------  4G   ------------------------#
+count=`ps -ef | grep python | grep ftp_4g | grep -v "grep" | wc -l`
+if [ $count -eq 0 ];then
+	echo "${now_time} start ftp_4g process....."
+   	su - oracle -c 'cd ./pro_zm_script/pro_4g;nohup ./ftp_4g.sh &'
+   	echo "<<${site}_${IP}>>Alarming time:${now_time} ftp_4g process is down,Now start it"|mail -s "${site} Process ftp_4g restart alarming" ${email_address}
+	msg="${site} ftp_4g process is down,Now start it!"
+  	#send_msg ${mobile} "${msg}"
+  	#send_msg ${mobile_1} "${msg}"
+   	send_msgArr "${array_mobile[*]}" "${msg}"
+else
+  	echo "${now_time} ftp_4g is running....."
+fi
+
+count=`ps -ef | grep python | grep data_4g_db | grep -v "grep" | wc -l` 
+if [ $count -eq 0 ]; then
+   	echo "${now_time} start data_4g_db.sh process....."
+  	su - oracle -c 'cd ./pro_zm_script/pro_4g;nohup ./data_4g_db.sh &'
+   	echo "<<${site}_${IP}>>Alarming time:${now_time} data_4g_db process is down,Now start it"|mail -s "${site} Process data_4g_db restart alarming" ${email_address}
+        msg="${site} data_4g_db process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} data_4g_db is running....."
+fi
+
+count=`ps -ef | grep python | grep device_4g_db | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start device_4g_db.sh process....."
+   su - oracle -c 'cd ./pro_zm_script/pro_4g;nohup ./device_4g_db.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} device_4g_db process is down,Now start it"|mail -s "${site} Process device_4g_db restart alarming" ${email_address}
+	msg="${site} device_4g_db process is down,Now start it!"	
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} device_4g_db is running....."
+fi
+
+#  ---------------------  2G  --------------------------#
+count=`ps -ef | grep python | grep ftp_2g | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start ftp_2g.sh process....."
+   su - oracle -c 'cd ./pro_zm_script/pro_2g;nohup ./ftp_2g.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} ftp_2g process is down,Now start it"|mail -s "${site} Process ftp_2g restart alarming" ${email_address}
+        msg="${site} ftp_2g process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} ftp_2g is running....."
+fi
+
+count=`ps -ef | grep python | grep data_2g_db | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start data_2g_db.sh process....."
+   su - oracle -c 'cd ./pro_zm_script/pro_2g;nohup ./data_2g_db.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} data_2g_db process is down,Now start it"|mail -s "${site} Process data_2g_db restart alarming" ${email_address}
+        msg="${site} data_2g_db process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} data_2g_db is running....."
+fi
+
+count=`ps -ef | grep python | grep device_2g_db | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start device_2g_db.sh process....."
+   su - oracle -c 'cd ./pro_zm_script/pro_2g;nohup ./device_2g_db.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} device_2g_db process is down,Now start it"|mail -s "${site} Process device_2g_db restart alarming" ${email_address}
+        msg="${site} device_2g_db process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} device_2g_db is running....."
+fi
+
+#------------------     WIFI  --------------------------#
+count=`ps -ef | grep python | grep ftp_wifi | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start ftp_wifi.sh process....."
+   su - oracle -c 'cd ./pro_zm_script/pro_wifi;nohup ./ftp_wifi.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} ftp_wifi process is down,Now start it"|mail -s "${site} Process ftp_wifi restart alarming" ${email_address}
+        msg="${site} ftp_wifi process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} ftp_wifi is running....."
+fi
+
+count=`ps -ef | grep python | grep ftp_device_wifi | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start ftp_device_wifi process....."
+   su - oracle -c 'cd ./pro_zm_script/pro_wifi;nohup ./ftp_device_wifi.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} ftp_device_wifi process is down,Now start it"|mail -s "${site} Process ftp_device_wifi restart alarming" ${email_address}
+        msg="${site} ftp_device_wifi process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} ftp_device_wifi is running....."
+fi
+
+count=`ps -ef | grep python | grep data_wifi_db | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start data_wifi_db process....."
+   su - oracle -c 'cd ./pro_zm_script/pro_wifi;nohup ./data_wifi_db.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} data_wifi_db process is down,Now start it"|mail -s "${site} Process data_wifi_db restart alarming" ${email_address}
+        msg="${site} data_wifi_db process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} data_wifi_db is running....."
+fi
+
+count=`ps -ef | grep python | grep device_wifi_info | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start device_wifi_info process....."
+   su - oracle -c 'cd ./pro_zm_script/pro_wifi;nohup ./device_wifi_info.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} device_wifi_info process is down,Now start it"|mail -s "${site} Process device_wifi_info restart alarming" ${email_address}
+        msg="${site} device_wifi_info process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} device_wifi_info is running....."
+fi
+
+#------------------  DW   --------------------------#
+count=`ps -ef | grep python | grep ftp_dw | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start ftp_dw process....."
+   su - oracle -c 'cd ./pro_zm_script/pro_dw;nohup ./ftp_dw.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} ftp_dw process is down,Now start it"|mail -s "${site} Process ftp_dw restart alarming" ${email_address}
+        msg="${site} ftp_dw process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} ftp_dw is running....."
+fi
+
+count=`ps -ef | grep python | grep dw_db | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start dw_db process....."
+   su - oracle -c 'cd ./pro_zm_script/pro_dw;nohup ./dw_db.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} dw_db process is down,Now start it"|mail -s "${site} Process dw_db restart alarming" ${email_address}
+        msg="${site} dw_db process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} dw_db is running....."
+fi
+
+#------------------   pro_collect   --------------------------#
+count=`ps -ef | grep python | grep data_sg | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start data_sg process....."
+   su - oracle -c 'cd ./pro_collect;nohup ./data_sg.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} data_sg process is down,Now start it"|mail -s "${site} Process data_sg restart alarming" ${email_address}
+        msg="${site} data_sg process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} data_sg is running....."
+fi
+
+count=`ps -ef | grep python | grep data_wifi_sg | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start data_wifi_sg process....."
+   su - oracle -c 'cd ./pro_collect;nohup ./data_wifi_sg.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} data_sg process is down,Now start it"|mail -s "${site} Process data_wifi_sg restart alarming" ${email_address}
+        msg="${site} data_wifi_sg process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} data_wifi_sg is running....."
+fi
+
+count=`ps -ef | grep python | grep device_sg | grep -v "grep" | wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start device_sg process....."
+   su - oracle -c 'cd ./pro_collect;nohup ./device_sg.sh &'
+   echo "<<${site}_${IP}>>Alarming time:${now_time} device_sg process is down,Now start it"|mail -s "${site} Process device_sg restart alarming" ${email_address}
+        msg="${site} device_sg process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} device_sg is running....."
+fi
+
+
+#------------------  Trs-TranRunsTX   --------------------------#
+count=`ps -ef|grep tomcat |grep Trs-TranRunsTX|grep -v "grep" |wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start Trs-TranRunsTX process....."
+   sh /home/sgrd/Trs-TranRunsTX/bin/startup.sh
+   echo "<<${site}_${IP}>>Alarming time:${now_time} Trs-TranRunsTX process is down,Now start it"|mail -s "${site} Process Trs-TranRunsTX restart alarming" ${email_address}
+        msg="${site} Trs-TranRunsTX process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} Trs-TranRunsTX is running....."
+fi
+
+#------------------  Trs-2g   --------------------------#
+count=`ps -ef|grep tomcat |grep Trs-2g|grep -v "grep" |wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start Trs-2g process....."
+   su - sgrd -c /home/sgrd/Trs-2g/bin/startup.sh
+   echo "<<${site}_${IP}>>Alarming time:${now_time} Trs-2g process is down,Now start it"|mail -s "${site} Process Trs-2g restart alarming" ${email_address}
+        msg="${site} Trs-2g process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} Trs-2g is running....."
+fi
+
+#------------------  Trs-4g   --------------------------#
+count=`ps -ef|grep tomcat |grep Trs-4g|grep -v "grep" |wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start Trs-4g process....."
+   su - sgrd -c /home/sgrd/Trs-4g/bin/startup.sh
+   echo "<<${site}_${IP}>>Alarming time:${now_time} Trs-4g process is down,Now start it"|mail -s "${site} Process Trs-4g restart alarming" ${email_address}
+        msg="${site} Trs-4g process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} Trs-4g is running....."
+fi
+
+#------------------  Trs-wifi   --------------------------#
+count=`ps -ef|grep tomcat |grep Trs-wifi|grep -v "grep" |wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start Trs-wifi process....."
+   su - sgrd -c /home/sgrd/Trs-wifi/bin/startup.sh
+   echo "<<${site}_${IP}>>Alarming time:${now_time} Trs-wifi process is down,Now start it"|mail -s "${site} Process Trs-wifi restart alarming" ${email_address}
+        msg="${site} Trs-wifi process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} Trs-wifi is running....."
+fi
+
+#------------------  Trs-dw   --------------------------#
+count=`ps -ef|grep tomcat |grep Trs-dw|grep -v "grep" |wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start Trs-dw process....."
+   su - sgrd -c /home/sgrd/Trs-dw/bin/startup.sh
+   echo "<<${site}_${IP}>>Alarming time:${now_time} Trs-dw process is down,Now start it"|mail -s "${site} Process Trs-dw restart alarming" ${email_address}
+        msg="${site} Trs-dw process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} Trs-dw is running....."
+fi
+
+#------------------  Trs-SendMSG   --------------------------#
+count=`ps -ef|grep tomcat |grep Trs-SendMSG|grep -v "grep" |wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start Trs-SendMSG process....."
+   su - sgrd -c /home/sgrd/Trs-SendMSG/bin/startup.sh
+   echo "<<${site}_${IP}>>Alarming time:${now_time} Trs-SendMSG process is down,Now start it"|mail -s "${site} Process Trs-SendMSG restart alarming" ${email_address}
+        msg="${site} Trs-SendMSG process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} Trs-SendMSG is running....."
+fi
+
+#------------------  Trs-autopatrolTask   --------------------------#
+count=`ps -ef|grep tomcat |grep Trs-autopatrolTask|grep -v "grep" |wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start Trs-autopatrolTask process....."
+   su - sgrd -c /home/sgrd/Trs-autopatrolTask/bin/startup.sh
+   echo "<<${site}_${IP}>>Alarming time:${now_time} Trs-autopatrolTask process is down,Now start it"|mail -s "${site} Process Trs-autopatrolTask restart alarming" ${email_address}
+        msg="${site} Trs-autopatrolTask process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} Trs-autopatrolTask is running....."
+fi
+
+#------------------  Trs-web   --------------------------#
+count=`ps -ef|grep tomcat |grep Trs-web|grep -v "grep" |wc -l`
+if [ $count -eq 0 ]; then
+   echo "${now_time} start Trs-web process....."
+   su - sgrd -c /home/sgrd/Trs-web/bin/startup.sh
+   echo "<<${site}_${IP}>>Alarming time:${now_time} Trs-web process is down,Now start it"|mail -s "${site} Process Trs-web restart alarming" ${email_address}
+        msg="${site} Trs-web process is down,Now start it!"
+        #send_msg ${mobile} "${msg}"
+        #send_msg ${mobile_1} "${msg}"
+        send_msgArr "${array_mobile[*]}" "${msg}"
+else
+   echo "${now_time} Trs-web is running....."
+fi
+
+}
+
+#数据库表空间检查函数
+function ck_tbsp(){
+su - oracle <<EOF
+sqlplus -S trs/trs123@trsdb
+set feed off
+set linesize 300
+set pagesize 200
+spool tablespace.alert
+SELECT a.tablespace_name "表空间名", 
+total / (1024 * 1024 * 1024) "表空间大小(G)",
+free / (1024 * 1024 * 1024) "表空间剩余大小(G)",
+(total - free) / (1024 * 1024 * 1024) "表空间使用大小(G)",
+round((total - free) / total, 4) * 100 "使用率%"
+FROM (SELECT tablespace_name, SUM(bytes) free
+FROM dba_free_space
+GROUP BY tablespace_name) a,
+(SELECT tablespace_name, SUM(bytes) total
+FROM dba_data_files
+GROUP BY tablespace_name) b
+WHERE a.tablespace_name = b.tablespace_name
+and (round((total - free) / total, 4) * 100) > 80
+order by  4 desc;
+spool off
+exit
+EOF
+if [ `cat /home/oracle/tablespace.alert|wc -l` -gt 0 ]
+then
+cat /home/oracle/tablespace.alert > /tmp/tablespace.tmp
+#SITE=虚拟机环境
+tablespace_name=`awk '{print $1}' /tmp/tablespace.tmp`
+PER_FREE=`awk '{print $NF}' /tmp/tablespace.tmp`
+mail -s "${site} TABLESPACE ALERT for trsdb" ${email_address} < /tmp/tablespace.tmp
+#echo $tablespace_name
+#echo $PER_FREE
+msg="${site} Database Alarm:${tablespace_name} ${PER_FREE}"
+#send_msg ${mobile} "${msg}"
+#send_msg ${mobile_1} "${msg}"
+send_msgArr "${array_mobile[*]}" "${msg}"
+fi
+}
+
+#侦码数据检查函数
+function _getZMdata()
+{
+  SOURCE_DB="trs/trs123@trsdb"
+  COUNT_DATA=`sqlplus -s $SOURCE_DB<<EOF
+  set pagesize 0 heading off echo off termout off feedback off linesize 1200 trimspool on
+  select count (1) from  t_datadetect_info d where detecttime>sysdate -10/1440 and detecttime < sysdate;
+  select count (1) from  data_wifi_mac d where detecttime>sysdate -10/1440 and detecttime < sysdate;
+  quit;
+EOF`
+
+count_zm=`echo $COUNT_DATA | awk -F ' ' '{print $1}'`
+count_mac=`echo $COUNT_DATA | awk -F ' ' '{print $2}'`
+echo "T_DETECT_INFO:Total[${count_zm}]"
+echo "DATA_WIFI_MAC:Total[${count_mac}]"
+
+if [ ${count_zm} -lt 1000 ]
+then
+echo "<<${site}_${IP}>>Alarming time:${now_time} Detect data is error!--[${count_zm}]"|mail -s "${site} Detect data is error!--[${count_zm}]" ${email_address}
+msg="${site} Detect data is error!--[${count_zm}]"
+send_msgArr "${array_mobile[*]}" "${msg}"
+fi
+
+if [ ${count_mac} -lt 1000 ]
+then
+echo "<<${site}_${IP}>>Alarming time:${now_time} WIFI data is error!--[${count_mac}]"|mail -s "${site} WIFI data is error!----[${count_mac}]" ${email_address}
+msg="${site} WIFI data is error!--[${count_mac}]"
+send_msgArr "${array_mobile[*]}" "${msg}"
+fi
+
+}
+
+#脚本主函数
+function main(){
+    check
+	ck_tbsp
+	_getZMdata
+}
+main
