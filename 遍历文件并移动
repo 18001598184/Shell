@@ -1,0 +1,121 @@
+#!/bin/bash
+for((i=296;i<=28584;i++));
+do
+j=$(printf "%05d\n" "$i")
+#echo $j
+#echo "%05d\n" $i
+cp HLW_DATA_INFO-20181212233333_$j.log /home/xsbj/hlw_4g_data/
+echo HLW_DATA_INFO-20181212233333_$j.log-ok >>movelog.log 2>&1
+sleep 2
+done
+
+
+
+
+#!/bin/bash
+for((i=28584;i>1252;i--));
+do
+j=$(printf "%05d\n" "$i")
+#echo $j
+#echo "%05d\n" $i
+cp HLW_DATA_INFO-20181212233333_$j.log /home/xsbj/hlw_4g_data/
+echo HLW_DATA_INFO-20181212233333_$j.log-ok >>movelog.log 2>&1
+sleep 1
+done
+
+
+
+
+
+
+
+
+
+
+
+
+#!/bin/bash
+for((i=0;i<=99;i++));
+do
+j=$(printf "%02d\n" "$i")
+echo $j
+#echo "%02d\n" $i
+cp /home/4gdata/0000000000$j.log /home/4gdata/bak
+echo 0000000000$j.log-ok >>/home/4gdata/movelog.log 2>&1
+sleep 18000
+done
+
+
+
+
+
+#每次从/home/4gdata下移动3个文件至/home/bak中
+
+
+
+
+#!/bin/bash
+unset i
+cd /home/4gdata/
+ls >/home/file.log
+i=3
+for filename in `cat /home/file.log`
+do
+if [ $i -eq 0 ]; then
+exit
+
+else
+mv /home/4gdata/$filename /home/bak/
+echo "move $filename ok!" >> /home/move.log
+let i=i-1
+echo $i
+fi
+done
+
+
+
+
+cat pid-null-0629.out|awk -F 'imageUrl=' '{print $2}'
+
+
+http://192.168.1.100:8077/wsPhoto/20190628/1000056_20190628135431_1690512.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000050_20190628143635_1691035.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000056_20190628110459_1689190.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000056_20190628095222_1687703.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000058_20190628162754_1691875.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000056_20190628101319_1688348.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000056_20190628123755_1689896.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000056_20190628114007_1689410.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000050_20190628131812_1690090.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000056_20190628193259_1693178.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000056_20190628162027_1691825.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000050_20190628102541_1688735.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000052_20190628125704_1690007.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000059_20190628175443_1692376.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000048_20190628141921_1690891.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000061_20190628163649_1691937.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000051_20190628163437_1691928.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000056_20190628102347_1688660.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000050_20190628101849_1688504.jpg
+http://192.168.1.100:8077/wsPhoto/20190628/1000052_20190628194413_1693386.jpg
+[root@rdserver logs]# 
+[root@rdserver logs]# cat catalina.out| grep pid=null| grep 20190628 |awk -F 'imageUrl=' '{ print $2 }' |wc -l
+1050
+[root@rdserver logs]# cat catalina.out| grep pid=null| grep 20190627 |awk -F 'imageUrl=' '{ print $2 }' |wc -l
+979
+[root@rdserver logs]# cat catalina.out| grep pid=null| grep 20190626 |awk -F 'imageUrl=' '{ print $2 }' |wc -l
+1118
+[root@rdserver logs]# 
+
+#!/bin/bash
+mkdir -p /home/camera/pidnull/
+cd /home/tomcat/logs
+cat catalina.out| grep pid=null| grep 20190628 |awk -F 'http://192.168.1.100:8077/' '{print $2}'>/home/camera/file.log
+for filename in `cat /home/camera/file.log`
+do
+mv /home/tomcat/webapps/$filename /home/camera/pidnull/
+echo "move $filename ok!" >> /home/camera/move.log
+done
+
+
+
