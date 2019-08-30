@@ -9,7 +9,7 @@ do
 let i=i+1
 LAG=`echo $line |awk '{print $5}'`
 topic_name=`echo $line |awk '{print $1}'`
-if [[ $i > 2 ]]&&[[ $LAG >1 ]];then
+if [[ $i > 2 ]]&&[[ $LAG >100000 ]];then
 echo $topic_name -- $LAG
 fi
 done<topic.log
